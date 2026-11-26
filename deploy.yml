@@ -1,0 +1,89 @@
+- name: Deploy DevOps Final on Debian or Ubuntu
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    project_dir: /opt/devops-final
+  tasks:
+    - name: Check Docker CLI
+      ansible.builtin.command: docker --version
+      register: docker_cli
+      changed_when: false
+      failed_when: false
+
+    - name: Check Compose plugin
+      ansible.builtin.command: docker compose version
+      register: compose_cli
+      changed_when: false
+      failed_when: false
+
+    - name: Install missing Docker components
+      when: docker_cli.rc != 0 or compose_cli.rc != 0
+      block:
+        - name: Install repository prerequisites
+          ansible.builtin.apt:
+            name: [ca-certificates, gnupg]
+            update_cache: true
+            cache_valid_time: 3600
+        - name: Create APT key directory
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+        - name: Install Docker signing key
+          ansible.builtin.get_url:
+            url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+            dest: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+        - name: Enable Docker stable repository
+          ansible.builtin.apt_repository:
+            repo: "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+            filename: devops-docker
+        - name: Install engine and Compose
+          ansible.builtin.apt:
+            name: "{{ (['docker-ce', 'docker-ce-cli', 'containerd.io'] if docker_cli.rc != 0 else []) + ['docker-compose-plugin', 'docker-buildx-plugin'] }}"
+            state: present
+
+    - name: Start Docker daemon
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create deployment directory
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy application and build context
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ project_dir }}/{{ item }}"
+        mode: '0644'
+      loop: [server.js, package.json, package-lock.json, Dockerfile, .dockerignore]
+      register: build_context
+
+    - name: Copy service configuration
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ project_dir }}/{{ item }}"
+        mode: '0644'
+      loop: [docker-compose.yml, prometheus.yml, datasource.yml]
+      register: config_files
+
+    - name: Start or reconcile the stack
+      ansible.builtin.command:
+        cmd: "docker compose up -d {{ '--build' if build_context.changed else '' }}"
+        chdir: "{{ project_dir }}"
+      register: compose_up
+      changed_when: "(compose_up.stderr ~ compose_up.stdout) is search('(?i)(created|started|pulled)')"
+
+    - name: Reload updated bind-mounted configuration
+      ansible.builtin.command:
+        cmd: "docker compose restart {{ item.service }}"
+        chdir: "{{ project_dir }}"
+      loop:
+        - { index: 1, service: prometheus }
+        - { index: 2, service: grafana }
+      when: config_files.results[item.index].changed
