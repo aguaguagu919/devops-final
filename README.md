@@ -46,3 +46,8 @@ Workflow запускается при push и pull request в `develop` и `mai
 | [ESLint и Jest](evidence/tests.png) | Все четыре теста прошли, включая SQL-запрос. |
 | [Первый запуск Ansible](evidence/first.png) | Плейбук развернул стек. |
 | [Повторный запуск Ansible](evidence/again.png) | `changed=0`, `failed=0`. |
+| [GitHub Actions в pull request](evidence/ci-pr.png) | lint и test прошли. Сборка и публикация пропущены по условию события. |
+| [GitHub Actions после слияния](evidence/ci-main.png) | При push в main успешно отработали все три job. |
+| [GitHub Packages](evidence/package.png) | Первому релизу присвоены теги latest и полный SHA коммита. Каждый новый push в main обновляет latest. |
+
+[Pull request с приложением](https://github.com/aguaguagu919/devops-final/pull/1) · [Проверки PR](https://github.com/aguaguagu919/devops-final/actions/runs/45911074638) · [Публикация первого релиза](https://github.com/aguaguagu919/devops-final/actions/runs/45911172355)
